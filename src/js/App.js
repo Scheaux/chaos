@@ -35,6 +35,7 @@ export default class App {
 
   connectWS() {
     const ws = new WebSocket('wss://corpchat-be.herokuapp.com/chat');
+    this.ws = ws;
     this.onMessageType(ws);
     this.imageUploadListener(ws);
     this.dragEventListener(ws);
@@ -74,8 +75,8 @@ export default class App {
 
   renderMessage(data) {
     const parsed = JSON.parse(data);
-    const chat = document.querySelector('.chat');
     if (!parsed.message || !parsed.date) return;
+    const chat = document.querySelector('.chat');
     const message = document.createElement('div');
     const nameAndDate = document.createElement('span');
     if (this.username === parsed.username) {
@@ -105,6 +106,9 @@ export default class App {
       message.append(messageText);
     } else if (parsed.type === 'text') {
       const messageText = document.createElement('span');
+      if (parsed.message.startsWith('```') && parsed.message.endsWith('```')) {
+        console.log('it is a code');
+      }
       messageText.className = 'message_text';
       messageText.innerText = parsed.message;
       message.append(messageText);
@@ -113,6 +117,11 @@ export default class App {
       audio.src = parsed.message;
       audio.controls = true;
       message.append(audio);
+    } else if (parsed.type === 'video') {
+      const video = document.createElement('video');
+      video.src = parsed.message;
+      video.controls = true;
+      message.append(video);
     }
     return null;
   }
@@ -163,9 +172,64 @@ export default class App {
           date,
         };
         ws.send(JSON.stringify(obj));
+        this.checkCommand(input.value);
         input.value = '';
       }
     });
+  }
+
+  async checkCommand(message) {
+    const msg = message.trim();
+    if (msg.startsWith('!weather')) {
+      const a = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const timezone = a.split('/')[1];
+      const rawResponse = await fetch(`https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/${timezone}/today?unitGroup=metric&include=current&key=PF6BJ4ZL76WG7TYU4XSTSLD23&contentType=json`);
+      const response = await rawResponse.json();
+      const { address } = response;
+      const forecast = response.days[0].description;
+      const { temp } = response.days[0];
+      const data = {
+        type: 'text',
+        username: 'ChaosBot',
+        message: `${address}, ${forecast} Temperature: ${temp}°C`,
+        date: moment.tz('Europe/Moscow').format('kk:mm DD.MM.YYYY'),
+      };
+      this.ws.send(JSON.stringify(data));
+    } else if (msg.startsWith('!coinflip')) {
+      const res = ['HEADS', 'TAILS'];
+      const idx = Math.floor(Math.random() * res.length);
+      const data = {
+        type: 'text',
+        username: 'ChaosBot',
+        message: res[idx],
+        date: moment.tz('Europe/Moscow').format('kk:mm DD.MM.YYYY'),
+      };
+      this.ws.send(JSON.stringify(data));
+    } else if (msg.startsWith('!roll')) {
+      const min = 0;
+      const max = 100;
+      const generated = Math.floor(Math.random() * (max - min + 1) + min);
+      const data = {
+        type: 'text',
+        username: 'ChaosBot',
+        message: generated.toString(),
+        date: moment.tz('Europe/Moscow').format('kk:mm DD.MM.YYYY'),
+      };
+      this.ws.send(JSON.stringify(data));
+    } else if (msg.startsWith('!color')) {
+      const letters = '0123456789ABCDEF';
+      let color = '#';
+      for (let i = 0; i < 6; i += 1) {
+        color += letters[Math.floor(Math.random() * 16)];
+      }
+      const data = {
+        type: 'text',
+        username: 'ChaosBot',
+        message: color,
+        date: moment.tz('Europe/Moscow').format('kk:mm DD.MM.YYYY'),
+      };
+      this.ws.send(JSON.stringify(data));
+    }
   }
 
   static showLoginError() {
