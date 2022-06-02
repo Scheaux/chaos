@@ -8,6 +8,6 @@
   "rules": {
     "no-restricted-syntax": ["error", "LabeledStatement", "WithStatement"],
     "linebreak-style": "off",
-    "no-new": "off"
+    "no-undef": "off"
   }
 }

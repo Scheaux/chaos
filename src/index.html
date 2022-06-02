@@ -16,6 +16,11 @@
       <input type="file" id="chat-file" />
     </div>
 
+    <div id="secret-modal" class="modal hidden">
+      <span class="droparea_text">Secret Key</span>
+      <input type="text" id="secret" />
+    </div>
+
     <div class="container">
       <div class="container_header">
         <div class="circle" style="background-color: #f00"></div>
@@ -40,6 +45,7 @@
           </aside>
 
           <div class="chat_container">
+            <img src="img/refresh.png" id="refresh" />
             <div class="chat"></div>
             <div class="chat_tools">
               <input
@@ -47,10 +53,8 @@
                 id="send-message"
                 placeholder="Type your message here..."
               />
-              <img
-                src="https://cdn-icons-png.flaticon.com/128/659/659774.png"
-                id="clip"
-              />
+              <img src="img/clip.png" id="clip" />
+              <img src="img/lock.png" id="lock" />
             </div>
           </div>
         </div>

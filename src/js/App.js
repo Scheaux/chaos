@@ -1,4 +1,7 @@
 import moment from 'moment-timezone';
+import './prism';
+import CryptoJS from 'crypto-js';
+import AES from 'crypto-js/aes';
 
 export default class App {
   constructor() {
@@ -12,8 +15,9 @@ export default class App {
 
   initListeners() {
     this.continueBtnOnclick();
-    App.clipButtonListener();
+    App.modalListeners();
     this.chatScrollListener();
+    this.refreshChatListener();
   }
 
   continueBtnOnclick() {
@@ -93,6 +97,7 @@ export default class App {
   }
 
   static getMultimediaElement(message, parsed) {
+    const secret = document.getElementById('secret');
     if (parsed.type === 'image') {
       const messageImage = document.createElement('img');
       messageImage.className = 'message_image';
@@ -105,13 +110,21 @@ export default class App {
       messageText.href = parsed.message;
       message.append(messageText);
     } else if (parsed.type === 'text') {
-      const messageText = document.createElement('span');
       if (parsed.message.startsWith('```') && parsed.message.endsWith('```')) {
-        console.log('it is a code');
+        const text = parsed.message.slice(3, parsed.message.length - 3);
+        const pre = document.createElement('pre');
+        const code = document.createElement('code');
+        code.className = 'language-js';
+        code.innerText = text;
+        pre.append(code);
+        message.append(pre);
+        Prism.highlightElement(code);
+      } else {
+        const messageText = document.createElement('span');
+        messageText.className = 'message_text';
+        messageText.innerText = parsed.message;
+        message.append(messageText);
       }
-      messageText.className = 'message_text';
-      messageText.innerText = parsed.message;
-      message.append(messageText);
     } else if (parsed.type === 'audio') {
       const audio = document.createElement('audio');
       audio.src = parsed.message;
@@ -122,8 +135,19 @@ export default class App {
       video.src = parsed.message;
       video.controls = true;
       message.append(video);
+    } else if (parsed.type === 'encrypted') {
+      const messageText = document.createElement('span');
+      messageText.className = 'message_text';
+      const decrypted = AES.decrypt(parsed.message, secret.value);
+      try {
+        const local = decrypted.toString(CryptoJS.enc.Utf8);
+        if (local !== '') messageText.innerText = local;
+        else messageText.innerText = '<ENCRYPTED>';
+        message.append(messageText);
+      } catch (e) {
+        console.log(e);
+      }
     }
-    return null;
   }
 
   async renderSomeMessages() {
@@ -136,6 +160,15 @@ export default class App {
       this.renderMessage(x);
     });
     App.scrollChat(1);
+  }
+
+  refreshChatListener() {
+    const refreshBtn = document.getElementById('refresh');
+    refreshBtn.addEventListener('click', async () => {
+      this.clearChat();
+      await this.renderSomeMessages();
+      App.scrollChat();
+    });
   }
 
   startRenderInterval() {
@@ -162,13 +195,23 @@ export default class App {
 
   onMessageType(ws) {
     const input = document.getElementById('send-message');
+    const secret = document.getElementById('secret');
     input.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') {
         const date = moment.tz('Europe/Moscow').format('kk:mm DD.MM.YYYY');
+        let type;
+        let message;
+        if (secret.value !== '') {
+          message = AES.encrypt(input.value, secret.value).toString();
+          type = 'encrypted';
+        } else {
+          message = input.value;
+          type = 'text';
+        }
         const obj = {
-          type: 'text',
+          type,
           username: this.username,
-          message: input.value,
+          message,
           date,
         };
         ws.send(JSON.stringify(obj));
@@ -178,58 +221,74 @@ export default class App {
     });
   }
 
-  async checkCommand(message) {
+  checkCommand(message) {
     const msg = message.trim();
     if (msg.startsWith('!weather')) {
-      const a = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const timezone = a.split('/')[1];
-      const rawResponse = await fetch(`https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/${timezone}/today?unitGroup=metric&include=current&key=PF6BJ4ZL76WG7TYU4XSTSLD23&contentType=json`);
-      const response = await rawResponse.json();
-      const { address } = response;
-      const forecast = response.days[0].description;
-      const { temp } = response.days[0];
-      const data = {
-        type: 'text',
-        username: 'ChaosBot',
-        message: `${address}, ${forecast} Temperature: ${temp}°C`,
-        date: moment.tz('Europe/Moscow').format('kk:mm DD.MM.YYYY'),
-      };
-      this.ws.send(JSON.stringify(data));
+      this.showWeather();
     } else if (msg.startsWith('!coinflip')) {
-      const res = ['HEADS', 'TAILS'];
-      const idx = Math.floor(Math.random() * res.length);
-      const data = {
-        type: 'text',
-        username: 'ChaosBot',
-        message: res[idx],
-        date: moment.tz('Europe/Moscow').format('kk:mm DD.MM.YYYY'),
-      };
-      this.ws.send(JSON.stringify(data));
+      this.flipCoin();
     } else if (msg.startsWith('!roll')) {
-      const min = 0;
-      const max = 100;
-      const generated = Math.floor(Math.random() * (max - min + 1) + min);
-      const data = {
-        type: 'text',
-        username: 'ChaosBot',
-        message: generated.toString(),
-        date: moment.tz('Europe/Moscow').format('kk:mm DD.MM.YYYY'),
-      };
-      this.ws.send(JSON.stringify(data));
+      this.rollTheDice();
     } else if (msg.startsWith('!color')) {
-      const letters = '0123456789ABCDEF';
-      let color = '#';
-      for (let i = 0; i < 6; i += 1) {
-        color += letters[Math.floor(Math.random() * 16)];
-      }
-      const data = {
-        type: 'text',
-        username: 'ChaosBot',
-        message: color,
-        date: moment.tz('Europe/Moscow').format('kk:mm DD.MM.YYYY'),
-      };
-      this.ws.send(JSON.stringify(data));
+      this.generateColor();
     }
+  }
+
+  async showWeather() {
+    const a = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const timezone = a.split('/')[1] || a.split('/')[0];
+    const rawResponse = await fetch(`https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/${timezone}/today?unitGroup=metric&include=current&key=PF6BJ4ZL76WG7TYU4XSTSLD23&contentType=json`);
+    const response = await rawResponse.json();
+    const { address } = response;
+    const forecast = response.days[0].description;
+    const { temp } = response.days[0];
+    const data = {
+      type: 'text',
+      username: 'ChaosBot',
+      message: `${address}, ${forecast} Temperature: ${temp}°C`,
+      date: moment.tz('Europe/Moscow').format('kk:mm DD.MM.YYYY'),
+    };
+    this.ws.send(JSON.stringify(data));
+  }
+
+  flipCoin() {
+    const res = ['HEADS', 'TAILS'];
+    const idx = Math.floor(Math.random() * res.length);
+    const data = {
+      type: 'text',
+      username: 'ChaosBot',
+      message: res[idx],
+      date: moment.tz('Europe/Moscow').format('kk:mm DD.MM.YYYY'),
+    };
+    this.ws.send(JSON.stringify(data));
+  }
+
+  rollTheDice() {
+    const min = 0;
+    const max = 100;
+    const generated = Math.floor(Math.random() * (max - min + 1) + min);
+    const data = {
+      type: 'text',
+      username: 'ChaosBot',
+      message: generated.toString(),
+      date: moment.tz('Europe/Moscow').format('kk:mm DD.MM.YYYY'),
+    };
+    this.ws.send(JSON.stringify(data));
+  }
+
+  generateColor() {
+    const letters = '0123456789ABCDEF';
+    let color = '#';
+    for (let i = 0; i < 6; i += 1) {
+      color += letters[Math.floor(Math.random() * 16)];
+    }
+    const data = {
+      type: 'text',
+      username: 'ChaosBot',
+      message: color,
+      date: moment.tz('Europe/Moscow').format('kk:mm DD.MM.YYYY'),
+    };
+    this.ws.send(JSON.stringify(data));
   }
 
   static showLoginError() {
@@ -252,17 +311,23 @@ export default class App {
     }
   }
 
-  static clipButtonListener() {
+  static modalListeners() {
     const fileManager = document.getElementById('file-manager');
     const blackout = document.getElementById('blackout');
     const clip = document.getElementById('clip');
+    const modals = document.querySelectorAll('.modal');
+    const lock = document.getElementById('lock');
     clip.addEventListener('click', () => {
       fileManager.classList.remove('hidden');
       blackout.classList.remove('hidden');
     });
     blackout.addEventListener('click', () => {
-      fileManager.classList.add('hidden');
       blackout.classList.add('hidden');
+      modals.forEach((x) => x.classList.add('hidden'));
+    });
+    lock.addEventListener('click', () => {
+      document.getElementById('secret-modal').classList.remove('hidden');
+      blackout.classList.remove('hidden');
     });
   }
 
